@@ -1,0 +1,11 @@
+{
+  "name": "flying-circus-connection-serial",
+  "description": "Nodejs USB serial connection for Flying Circus",
+  "main": "index.js",
+  "repository": "https://github.com/murilopolese/flying-circus-connection-serial",
+  "author": "Murilo Polese <murilopolese@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "serialport": "node-serialport/node-serialport"
+  }
+}
