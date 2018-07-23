@@ -1,6 +1,28 @@
 const EventEmitter = require('events')
 const SerialPort = require('serialport')
 
+const codeListFiles = `print(' ')
+from os import listdir
+print(listdir())
+`
+const codeLoadFile = (path) => {
+return `print(' ')
+with open('${path}', 'r') as f:
+    for line in f.readlines():
+        print(line.replace('\\n', ''))
+`
+}
+
+const codeRemoveFile = (path) => {
+return `from os import remove
+remove('${path}')
+`
+}
+
+const codeCollectGarbage = `import gc
+gc.collect()
+`
+
 class SerialConnection extends EventEmitter {
     constructor() {
         super()
@@ -35,6 +57,7 @@ class SerialConnection extends EventEmitter {
         })
         this.port.on('open', () => {
             this.emit('connected')
+            this.port.write('\r')
         })
         this.port.on('data', (data) => this._eventHandler(data))
         this.port.open()
@@ -57,7 +80,9 @@ class SerialConnection extends EventEmitter {
         this.stop()
         this._enterRawRepl()
         this._executeRaw(code)
-        this._exitRawRepl()
+            .then(() => {
+                this._exitRawRepl()
+            })
     }
     /**
     * Evaluate a command/expression.
@@ -71,7 +96,7 @@ class SerialConnection extends EventEmitter {
     * REPL this command is "CTRL-C".
     */
     stop() {
-        this.port.write('\r\x03') // CTRL-C 2x
+        this.port.write('\r\x03') // CTRL-C
     }
     /**
     * Send a command to "soft reset".
@@ -84,22 +109,14 @@ class SerialConnection extends EventEmitter {
     * Prints on console the existing files on file system.
     */
     listFiles() {
-        const code = `print(' ')
-from os import listdir
-print(listdir())
-`
-        this.execute(code)
+        this.execute(codeListFiles)
     }
     /**
     * Prints on console the content of a given file.
     * @param {String} path File's path
     */
     loadFile(path) {
-        const pCode = `print(' ')
-with open('${path}', 'r') as f:
-    for line in f.readlines():
-        print(line.replace('\\n', ''))`
-        this.execute(pCode)
+        this.execute(codeLoadFile(path))
     }
     /**
     * Writes a given content to a file in the file system.
@@ -111,9 +128,7 @@ with open('${path}', 'r') as f:
             return
         }
         // TODO: Find anoter way to do it without binascii
-        let pCode = `import binascii
-f = open('${path}', 'w')
-`
+        let pCode = `import binascii; f = open('${path}', 'w')\n`
         // `content` is what comes from the editor. We want to write it
         // line one by one on a file so we split by `\n`
         content.split('\n').forEach((line) => {
@@ -132,9 +147,7 @@ f = open('${path}', 'w')
     * @param {String} path File's path
     */
     removeFile(path) {
-        const pCode = `from os import remove
-remove('${path}')`
-        this.execute(pCode)
+        this.execute(codeRemoveFile(path))
     }
 
     /**
@@ -159,25 +172,47 @@ remove('${path}')`
     * Put REPL in raw mode
     */
     _enterRawRepl() {
-        this.stop();
+        console.log('enter raw repl')
         this.port.write('\r\x01') // CTRL-A
     }
     /**
     * Exit REPL raw mode
     */
     _exitRawRepl() {
-        this.port.write('\r\x04') // CTRL-D
-        this.port.write('\r\x02') // CTRL-B
+        this.port.write('\r\x04\r\x02') // CTRL-D // CTRL-B
     }
     /**
     * Writes a command to connected port
     * @param {String} command Command to be written on connected port
     */
     _executeRaw(command) {
-        this.port.write(Buffer.from(command))
-        if (command.indexOf('\n') == -1) {
-            this.port.write('\r')
+        const writePromise = (buffer) => {
+            return new Promise((resolve, reject) => {
+                setTimeout(() => {
+                    this.port.write(buffer, (err) => {
+                        if (err) return reject()
+                        resolve()
+                    })
+                }, 1)
+            })
         }
+        const l = 1024
+        let slices = []
+        for(let i = 0; i < command.length; i+=l) {
+            let slice = command.slice(i, i+l)
+            slices.push(slice)
+        }
+        return new Promise((resolve, reject) => {
+            slices.reduce((cur, next) => {
+                return cur.then(() => {
+                    return writePromise(next)
+                })
+            }, Promise.resolve())
+            .then()
+            .then(() => {
+                resolve()
+            })
+        })
     }
 }
 
