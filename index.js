@@ -129,6 +129,7 @@ class SerialConnection extends EventEmitter {
         }
         // TODO: Find anoter way to do it without binascii
         let pCode = `import binascii; f = open('${path}', 'w')\n`
+        pCode += `import gc; gc.collect\n`
         // `content` is what comes from the editor. We want to write it
         // line one by one on a file so we split by `\n`
         content.split('\n').forEach((line) => {
